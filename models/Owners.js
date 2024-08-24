@@ -40,8 +40,7 @@ const OperatorSchema = new Mongoose.Schema({
     },
   ],
   role: {
-    type: String,
-    required: true,
+    type: String
   },
 });
 const hotelOwnerchema = new Mongoose.Schema({
@@ -76,7 +75,7 @@ const hotelOwnerchema = new Mongoose.Schema({
     type: Number,
   },
 
-  date: {type: Date, default: Date.now},
+  date: { type: Date, default: Date.now },
   operator: {
     type: Mongoose.Schema.Types.ObjectId,
     ref: "OperatorSchema",
@@ -85,4 +84,4 @@ const hotelOwnerchema = new Mongoose.Schema({
 
 const Operator = Mongoose.model("Operator", OperatorSchema);
 const AircraftOPerator = Mongoose.model("AircraftOPerator", hotelOwnerchema);
-module.exports = {Operator, AircraftOPerator};
+module.exports = { Operator, AircraftOPerator };

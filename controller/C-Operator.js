@@ -1,28 +1,32 @@
 const bcrypt = require("bcrypt");
-const axios = require("axios");
-const {Operator} = require("../models/Owners");
+const asyncHandler = require('express-async-handler');
+const { Operator, AircraftOPerator } = require("../models/Owners");
 const Role = require("../models/role");
-const ErrorHandler = require("../utils/error-handler");
 const OperatorService = require("../services/operator-service");
-const {generateToken} = require("../config/jwtToken");
+const { generateToken } = require("../config/jwtToken");
 
-exports.Register = async (req, res, next) => {
-  const {company_name, email_address, password, contact_number, country_name} =
+const { isValidEmail } = require('../regex/emailRegex');
+const { isValidMobileNumber } = require('../regex/phoneNumberRegex');
+
+
+exports.Register = asyncHandler(async (req, res) => {
+  const {
+    hotel_name, email_address, password, contact_number, country_name } =
     req.body;
 
   if (
-    company_name === undefined ||
-    email_address === undefined ||
-    password === undefined ||
-    contact_number === undefined ||
-    country_name === undefined
+    !hotel_name ||
+    !email_address ||
+    !password ||
+    !contact_number ||
+    !country_name
   ) {
     return res.status(400).json({
       success: false,
-      msg: "company_name,email_address,password,contact_number,country_name are required",
+      msg: "hotel_name,email_address,password,contact_number,country_name are required",
     });
   } else if (
-    typeof company_name !== "string" ||
+    typeof hotel_name !== "string" ||
     typeof email_address !== "string" ||
     typeof password !== "string" ||
     typeof contact_number !== "string" ||
@@ -30,10 +34,10 @@ exports.Register = async (req, res, next) => {
   ) {
     return res.status(400).json({
       error:
-        "company_name,email_address,password,contact_number,country_name must be a string",
+        "hotel_name,email_address,password,contact_number,country_name must be a string",
     });
   } else if (
-    company_name === "" ||
+    hotel_name === "" ||
     email_address === "" ||
     password === "" ||
     contact_number === "" ||
@@ -41,7 +45,7 @@ exports.Register = async (req, res, next) => {
   ) {
     return res.status(400).json({
       success: false,
-      msg: `company_name,email_address,password,contact_number,country_name cant take an empty string value i.e ''`,
+      msg: `hotel_name,email_address,password,contact_number,country_name cant take an empty string value i.e ''`,
     });
   } else if (!isValidMobileNumber(contact_number)) {
     return res.status(400).json({
@@ -66,13 +70,12 @@ exports.Register = async (req, res, next) => {
     if (!findOperator) {
       // create new operator
       const newUser = new Operator({
-        company_name,
+        hotel_name,
         email_address,
         contact_number,
         country_name,
-
         password: hashedPassword,
-        role: role,
+        role,
       });
 
       console.log("line 86 operator deatils", newUser);
@@ -80,19 +83,25 @@ exports.Register = async (req, res, next) => {
 
       await newUser.save();
 
-      res.status(201).json({message: "Operator register successfully"});
+      res.status(201).json({ message: "Operator register successfully", data: newUser, success: true, });
     } else {
-      throw new Error("Operator already exist");
+      return res.status(201)({
+        msg: 'User Already Exists',
+        success: false,
+      })
     }
   } catch (error) {
-    throw new Error(error);
+    res.status(500).json({ error: 'Error Occurred while creating user', msg: error });
   }
-};
 
-exports.Login = async (req, res) => {
-  const {email_address, password} = req.body;
 
-  if (email_address === undefined || password === undefined) {
+})
+
+
+exports.Login = asyncHandler(async (req, res) => {
+  const { email_address, password } = req.body;
+
+  if (!email_address || !password) {
     return res.status(400).json({
       success: false,
       msg: "email_address,password are required",
@@ -104,375 +113,275 @@ exports.Login = async (req, res) => {
     });
   }
   try {
-    const user = await Operator.findOne({email_address});
+    const user = await Operator.findOne({ email_address });
 
     if (!user) {
-      return res.json({message: "user not found"});
+      return res.json({ message: "user not found" });
     }
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      return res.status(404).json({message: "inCorrect password"});
+      return res.status(404).json({ message: "inCorrect password" });
     }
     if (user && passwordMatch) {
-      const aircraftCreatedByOPerator = user.aircraftOperators;
-      console.log("operator login line 127", aircraftCreatedByOPerator);
       res.json({
         id: user?._id,
         email_address,
         password,
-
-        token: generateToken(user?._id),
-        aircraftCreatedByOPerator: aircraftCreatedByOPerator,
+        token: await (generateToken(user?._id)),
       });
     }
   } catch (error) {
-    return res.status(500).json({error: "server error"});
+    return res.status(500).json({ error: "server error" });
   }
-};
+})
 
-exports.AddAircrafts = async (req, res, next) => {
+exports.AircraftOPeratorHotel = asyncHandler(async (req, res) => {
   try {
-    const searchCity = req.body.location;
+    const {
+      Hotel_type, Tail_sign, location, icao, country_name, charges_per_hour, rating, sr_no } =
+      req.body;
 
-    // Check if the data is already cached
-    const cachedData = cache.get(searchCity);
-    if (cachedData) {
-      // If cached data exists, use it instead of making an API call
-      const {icaoCode, country_name} = cachedData;
+    if (
+      !Hotel_type ||
+      !Tail_sign ||
+      !location ||
+      !icao ||
+      !country_name ||
+      !charges_per_hour ||
+      !rating ||
+      !sr_no) {
+      return res.status(400).json({
+        success: false,
+        msg: "Hotel_type, Tail_sign,location,icao,country_name,charges_per_hour,rating are required",
+      });
+    } else if (
+      typeof Hotel_type !== "string" ||
+      typeof Tail_sign !== "string" ||
+      typeof location !== "string" ||
+      typeof icao !== "string" ||
+      typeof country_name !== "string"
+    ) {
+      return res.status(400).json({
+        error:
+          "Hotel_type, Tail_sign,location,icao,country_name must be a string",
+      });
+    }
+    else if (
+      typeof charges_per_hour !== "number" ||
+      typeof rating !== "number" ||
+      typeof sr_no !== "number"
 
-      const AirOperator = {
-        Aircraft_type: req.body.Aircraft_type,
-        Tail_sign: req.body.Tail_sign,
-        location: req.body.location,
-        charges_per_hour: req.body.charges_per_hour,
-        speed: req.body.speed,
-        icao: icaoCode,
-        country_name: country_name,
-        sr_no: req.body.sr_no,
-      };
-      console.log("line 194 operator details", AirOperator);
-      if (
-        AirOperator.Aircraft_type === undefined ||
-        AirOperator.Tail_sign === undefined ||
-        AirOperator.location === undefined ||
-        AirOperator.charges_per_hour === undefined ||
-        AirOperator.speed === undefined ||
-        AirOperator.sr_no === undefined
-      ) {
-        return res.status(400).json({
-          success: false,
-          msg: "Aircraft_type,Tail_sign,location,charges_per_hour,speed,sr_no are required",
-        });
-      } else if (
-        typeof AirOperator.Aircraft_type !== "string" ||
-        typeof AirOperator.Tail_sign !== "string" ||
-        typeof AirOperator.location !== "string" ||
-        typeof AirOperator.charges_per_hour !== "number" ||
-        typeof AirOperator.speed !== "number" ||
-        typeof AirOperator.sr_no !== "string"
-      ) {
-        return res.status(400).json({
-          error:
-            "Aircraft_type,Tail_sign,location,sr_no  must be a string and charges_per_hour,speed must be a number",
-        });
-      } else if (
-        AirOperator.Aircraft_type === "" ||
-        AirOperator.Tail_sign === "" ||
-        AirOperator.location === "" ||
-        AirOperator.charges_per_hour === 0 ||
-        AirOperator.speed === 0 ||
-        AirOperator.sr_no === ""
-      ) {
-        return res.status(400).json({
-          success: false,
-          msg: `Aircraft_type,Tail_sign,location,sr_no  cant take an empty string value i.e '' and charges_per_hour, speed must not be 0`,
-        });
-      }
-
-      // Insert AirOperator into the database or perform other necessary actions
-      const operator = await OperatorService.createOperator(AirOperator);
-
-      // Update the Operator's aircraftOperators field with the new AircraftOperator's ID
-      await Operator.findByIdAndUpdate(
-        req.operator._id,
-        {
-          $push: {
-            aircraftOperators: {
-              aircraftOperator: operator._id,
-              Aircraft_type: operator.Aircraft_type,
-              Tail_sign: operator.Tail_sign,
-              location: operator.location,
-              charges_per_hour: operator.charges_per_hour,
-              speed: operator.speed,
-              icao: operator.icao,
-              country_name: operator.country_name,
-              margin: operator.margin,
-              sr_no: operator.sr_no,
-            },
-          },
-        },
-        {new: true}
-      );
-      console.log("line 257 operator details", Operator);
-      await operator.save();
-      res.json({message: "Aircraft created successfully", AirOperator});
-    } else {
-      // If not cached, make the API call
-
-      const tlsSocket = new MyTLSSocket();
-
-      tlsSocket.on("close", () => {
-        // Remove the listener to avoid memory leaks
-        tlsSocket.emitter.removeListener("close", () => {
-          // ...
-        });
+    ) {
+      return res.status(400).json({
+        error:
+          "charges_per_hour,rating and sr_no must be a number",
+      });
+    } else if (
+      Hotel_type === "" ||
+      Tail_sign === "" ||
+      location === "" ||
+      icao === "" ||
+      country_name === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        msg: `Hotel_type,Tail_sign,location,icao,country_name,charges_per_hour cant take an empty string value i.e ''`,
+      });
+    }
+    else {
+      // create new operator
+      const newAircraftOPerator = new AircraftOPerator({
+        Hotel_type,
+        Tail_sign,
+        location,
+        icao,
+        country_name,
+        charges_per_hour,
+        rating,
+        sr_no
       });
 
-      const response = await axios.get(
-        "https://dir.aviapages.com/api/airports/",
-        {
-          headers: {
-            accept: "application/json",
-            Authorization: process.env.AVID_API_TOKEN,
-          },
-          params: {
-            search_city: searchCity, // Include the search_city query parameter in the request
-          },
-          socket: tlsSocket,
-        }
-      );
+      console.log("line 203 newAircraftOPerator deatils", newAircraftOPerator);
+      // res.json(newUser);
 
-      let icaoCode = "";
-      let country_name = "";
+      await newAircraftOPerator.save();
 
-      if (response.status === 200) {
-        if (response.data.results.length === 1) {
-          icaoCode = response.data.results[0]
-            ? response.data.results[0].icao
-            : null;
-          country_name = response.data.results[0]
-            ? response.data.results[0].country_name
-            : null;
-        } else if (response.data.results.length > 1) {
-          const results = response.data.results;
-          for (const result of results) {
-            if (result.icao) {
-              icaoCode = result.icao;
-              country_name = result.country_name;
-              break;
-            }
-          }
-        }
-
-        // Cache the data for a month (30 days) for future use
-        cache.set(searchCity, {icaoCode, country_name});
-
-        const AirOperator = {
-          Aircraft_type: req.body.Aircraft_type,
-          Tail_sign: req.body.Tail_sign,
-          location: req.body.location,
-          charges_per_hour: req.body.charges_per_hour,
-          speed: req.body.speed,
-          icao: icaoCode,
-          country_name: country_name,
-          sr_no: req.body.sr_no,
-        };
-
-        if (
-          AirOperator.Aircraft_type === undefined ||
-          AirOperator.Tail_sign === undefined ||
-          AirOperator.location === undefined ||
-          AirOperator.charges_per_hour === undefined ||
-          AirOperator.speed === undefined ||
-          AirOperator.sr_no === undefined
-        ) {
-          return res.status(400).json({
-            success: false,
-            msg: "Aircraft_type,Tail_sign,location,charges_per_hour,speed,sr_no are required",
-          });
-        } else if (
-          typeof AirOperator.Aircraft_type !== "string" ||
-          typeof AirOperator.Tail_sign !== "string" ||
-          typeof AirOperator.location !== "string" ||
-          typeof AirOperator.charges_per_hour !== "number" ||
-          typeof AirOperator.speed !== "number" ||
-          typeof AirOperator.sr_no !== "string"
-        ) {
-          return res.status(400).json({
-            error:
-              "Aircraft_type,Tail_sign,location,sr_no  must be a string and charges_per_hour,speed must be a number",
-          });
-        } else if (
-          AirOperator.Aircraft_type === "" ||
-          AirOperator.Tail_sign === "" ||
-          AirOperator.location === "" ||
-          AirOperator.charges_per_hour === 0 ||
-          AirOperator.speed === 0 ||
-          AirOperator.sr_no === ""
-        ) {
-          return res.status(400).json({
-            success: false,
-            msg: `Aircraft_type,Tail_sign,location,sr_no  cant take an empty string value i.e '' and charges_per_hour, speed must not be 0`,
-          });
-        }
-
-        // Insert AirOperator into the database or perform other necessary actions
-        const operator = await OperatorService.createOperator(AirOperator);
-        // Get the operator's ID and push it to the aircraftOperators array in Operator
-
-        // Update the Operator's aircraftOperators field with the new AircraftOperator's ID
-        await Operator.findByIdAndUpdate(
-          req.operator._id,
-          {
-            $push: {
-              aircraftOperators: {
-                aircraftOperator: operator._id,
-                Aircraft_type: operator.Aircraft_type,
-                Tail_sign: operator.Tail_sign,
-                location: operator.location,
-                charges_per_hour: operator.charges_per_hour,
-                speed: operator.speed,
-                icao: operator.icao,
-                country_name: operator.country_name,
-                margin: operator.margin,
-                sr_no: operator.sr_no,
-              },
-            },
-          },
-          {new: true}
-        );
-        await operator.save();
-        res.json({message: "Aircraft created successfully", AirOperator});
-      } else {
-        res.status(response.status).json({
-          error: "Failed to fetch airport data",
-        });
-      }
+      res.status(201).json({ message: "newAircraftOPerator created successfully", data: newAircraftOPerator, success: true, });
     }
+
+
   } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({error: "Error creating aircraft"});
+    res.status(500).json({ error: 'Error Occurred while creating newAircraftOPerator', msg: error });
   }
-};
+})
 
-exports.getAirCraftOperatorLists = async (req, res) => {
-  const operator = await OperatorService.getOperators();
-
-  res.json({succes: true, message: "operator List found", data: operator});
-};
-exports.EditOperator = async (req, res) => {
-  const {id} = req.params;
-  if (id === undefined || null) {
-    return res.status(400).json({
-      success: false,
-      msg: "id is required",
-    });
-  }
-  const AirOperator = {
-    Aircraft_type: req?.body?.Aircraft_type,
-    Tail_sign: req?.body?.Tail_sign,
-    location: req?.body?.location,
-    charges_per_hour: req?.body?.charges_per_hour,
-    speed: req?.body?.speed,
-    icao: req?.body?.icao,
-    country_name: req?.body?.country_name,
-    sr_no: req?.body?.sr_no,
-  };
-
-  if (
-    AirOperator.Aircraft_type === undefined ||
-    AirOperator.Tail_sign === undefined ||
-    AirOperator.location === undefined ||
-    AirOperator.charges_per_hour === undefined ||
-    AirOperator.icao === undefined ||
-    AirOperator.country_name === undefined ||
-    AirOperator.speed === undefined ||
-    AirOperator.sr_no === undefined
-  ) {
-    return res.status(400).json({
-      success: false,
-      msg: "Aircraft_type,Tail_sign,location,charges_per_hour ,icao,speed,sr_no,country_name are required",
-    });
-  } else if (
-    typeof AirOperator.Aircraft_type !== "string" ||
-    typeof AirOperator.Tail_sign !== "string" ||
-    typeof AirOperator.location !== "string" ||
-    typeof AirOperator.icao !== "string" ||
-    typeof AirOperator.charges_per_hour !== "number" ||
-    typeof AirOperator.country_name !== "string" ||
-    typeof AirOperator.speed !== "number" ||
-    typeof AirOperator.sr_no !== "string"
-  ) {
-    return res.status(400).json({
-      error:
-        "Aircraft_type,Tail_sign,location,sr_no,icao,country_name  must be a string and charges_per_hour,speed must be a number",
-    });
-  } else if (
-    AirOperator.Aircraft_type === "" ||
-    AirOperator.Tail_sign === "" ||
-    AirOperator.location === "" ||
-    AirOperator.icao === "" ||
-    AirOperator.charges_per_hour === 0 ||
-    AirOperator.country_name === "" ||
-    AirOperator.speed === 0 ||
-    AirOperator.sr_no === ""
-  ) {
-    return res.status(400).json({
-      success: false,
-      msg: `Aircraft_type,Tail_sign,location,sr_no,icao,country_name  cant take an empty string value i.e '' and charges_per_hour, speed must not be 0`,
-    });
-  }
-
-  console.log(AirOperator);
-
-  const operator = await OperatorService.updateOperator(id, AirOperator);
-
-  if (!operator) {
-    return res.status(404).json({
-      success: false,
-      message: "Operator not found",
-    });
-  }
-
+exports.GetAllMyAircraftOperatorHotel = asyncHandler(async (req, res) => {
   try {
-    await operator.save();
+    const operatorId = req.userOperator.id;
 
-    res
-      .status(200)
-      .json({success: true, message: "Operator is updated sucessfully"});
+    if (!operatorId) {
+      return res.status(400).json({
+        success: false,
+        msg: "Please log in first. Unknown user.",
+      });
+    }
+
+    // Find all AircraftOPerator documents associated with the operatorId
+    const myHotelLists = await AircraftOPerator.find({ operator: operatorId });
+
+    if (!myHotelLists.length) {
+      return res.status(404).json({
+        success: false,
+        msg: "No Aircraft Operator Hotels found for this user.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: myHotelLists,
+    });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Error updating operator",
+      msg: "Server error",
+      error: error.message,
     });
   }
-};
-exports.DeleteOperator = async (req, res) => {
-  const {id} = req.params;
-  if (id === undefined || null) {
-    return res.status(400).json({
-      success: false,
-      msg: "id is required",
-    });
-  }
+});
+
+
+exports.EditAircraftOPeratorHotel = asyncHandler(async (req, res) => {
   try {
-    const deleteOperator = await OperatorService.deleteOperator(id);
-    // Remove all records of the deleted operator from aircraftOperators array
-    await Operator.updateMany(
-      {"aircraftOperators.aircraftOperator": deleteOperator.id},
-      {$pull: {aircraftOperators: {aircraftOperator: deleteOperator.id}}}
+    const { id } = req.params;
+    const {
+      Hotel_type, Tail_sign, location, icao, country_name, charges_per_hour, rating, sr_no
+    } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        msg: "aircraftOperatorHotelId is required",
+      });
+    }
+
+    else if (
+      !Hotel_type ||
+      !Tail_sign ||
+      !location ||
+      !icao ||
+      !country_name ||
+      !charges_per_hour ||
+      !rating ||
+      !sr_no) {
+      return res.status(400).json({
+        success: false,
+        msg: "Hotel_type, Tail_sign,location,icao,country_name,charges_per_hour,rating are required",
+      });
+    } else if (
+      typeof Hotel_type !== "string" ||
+      typeof Tail_sign !== "string" ||
+      typeof location !== "string" ||
+      typeof icao !== "string" ||
+      typeof country_name !== "string"
+    ) {
+      return res.status(400).json({
+        error:
+          "Hotel_type, Tail_sign,location,icao,country_name must be a string",
+      });
+    }
+    else if (
+      typeof charges_per_hour !== "number" ||
+      typeof rating !== "number" ||
+      typeof sr_no !== "number"
+
+    ) {
+      return res.status(400).json({
+        error:
+          "charges_per_hour,rating and sr_no must be a number",
+      });
+    } else if (
+      Hotel_type === "" ||
+      Tail_sign === "" ||
+      location === "" ||
+      icao === "" ||
+      country_name === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        msg: `Hotel_type,Tail_sign,location,icao,country_name,charges_per_hour cant take an empty string value i.e ''`,
+      });
+    }
+    const editedAircraftOperatorHotel = await AircraftOPerator.findByIdAndUpdate(
+      id,
+      { Hotel_type, Tail_sign, location, icao, country_name, charges_per_hour, rating, sr_no },
+      { new: true }
     );
 
-    res.json({
+    if (!editedAircraftOperatorHotel) {
+      return res.status(404).json({
+        success: false,
+        msg: "Aircraft Operator Hotel not found",
+      });
+    }
+
+    await Operator.updateMany(
+      { "aircraftOperators.aircraftOperator": editedAircraftOperatorHotel._id },
+      { $set: { "aircraftOperators.$[elem]": editedAircraftOperatorHotel } },
+      { arrayFilters: [{ "elem.aircraftOperator": editedAircraftOperatorHotel._id }] }
+    );
+
+    return res.status(200).json({
       success: true,
-      data: deleteOperator,
+      data: editedAircraftOperatorHotel,
     });
+
   } catch (error) {
-    res.status(500).json({
+    console.error(error);
+    return res.status(500).json({
       success: false,
-      message: "Error while deleting operator",
+      msg: "Internal server error",
     });
   }
-};
+});
+
+exports.DeleteAircraftOperatorHotel = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        msg: "aircraftOperatorHotelId is required",
+      });
+    }
+    else {
+
+      const deletedAircraftOperatorHotel = await AircraftOPerator.findByIdAndDelete(id);
+
+      if (!deletedAircraftOperatorHotel) {
+        return res.status(404).json({
+          success: false,
+          msg: "Aircraft Operator Hotel not found",
+        });
+      }
+
+      await Operator.updateMany(
+        { "aircraftOperators.aircraftOperator": deletedAircraftOperatorHotel.id },
+        { $pull: { aircraftOperators: { aircraftOperator: deletedAircraftOperatorHotel.id } } }
+      );
+      return res.status(200).json({
+        success: true,
+        data: deletedAircraftOperatorHotel,
+      });
+    }
+
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      msg: "Internal server error",
+    });
+  }
+})
+
