@@ -207,7 +207,29 @@ exports.AircraftOPeratorHotel = asyncHandler(async (req, res) => {
 
       await newAircraftOPerator.save();
 
-      res.status(201).json({ message: "newAircraftOPerator created successfully", data: newAircraftOPerator, success: true, });
+      // Find the corresponding Operator and update hotelOwner
+      const operator = await Operator.findOne({ email_address: req.userOperator.email_address }); // Assuming you have user email in req.user
+
+      if (!operator) {
+        return res.status(404).json({
+          success: false,
+          msg: "Operator not found",
+        });
+      }
+
+      operator.hotelOwner.push({
+        aircraftOperator: newAircraftOPerator._id,
+        Hotel_type,
+        Tail_sign,
+        location,
+        icao,
+        country_name,
+        charges_per_hour,
+        rating,
+        sr_no,
+      });
+      await operator.save();
+      res.status(201).json({ message: "newAircraftOPerator created added to hotelOwner successfully ", data: newAircraftOPerator, success: true, });
     }
 
 
@@ -216,27 +238,32 @@ exports.AircraftOPeratorHotel = asyncHandler(async (req, res) => {
   }
 })
 
-exports.GetAllMyAircraftOperatorHotel = asyncHandler(async (req, res) => {
+exports.GetAircraftOperatorHotelCreatedByMe = asyncHandler(async (req, res) => {
   try {
-    const operatorId = req.userOperator.id;
-
-    if (!operatorId) {
+    if (!req.userOperator.id) {
       return res.status(400).json({
         success: false,
         msg: "Please log in first. Unknown user.",
       });
     }
 
-    // Find all AircraftOPerator documents associated with the operatorId
-    const myHotelLists = await AircraftOPerator.find({ operator: operatorId });
+    // Find all AircraftOPerator documents associated with my id
+    const operator = await Operator.findOne({ _id: req.userOperator.id });
+    if (!operator) {
+      return res.status(404).json({
+        success: false,
+        msg: "Operator not found",
+      });
+    }
+    const myHotelLists = operator?.hotelOwner
+    console.log('myHotelLists', myHotelLists);
 
-    if (!myHotelLists.length) {
+    if (myHotelLists.length < 1) {
       return res.status(404).json({
         success: false,
         msg: "No Aircraft Operator Hotels found for this user.",
       });
     }
-
     return res.status(200).json({
       success: true,
       data: myHotelLists,
@@ -265,53 +292,17 @@ exports.EditAircraftOPeratorHotel = asyncHandler(async (req, res) => {
       });
     }
 
-    else if (
-      !Hotel_type ||
-      !Tail_sign ||
-      !location ||
-      !icao ||
-      !country_name ||
-      !charges_per_hour ||
-      !rating ||
-      !sr_no) {
-      return res.status(400).json({
-        success: false,
-        msg: "Hotel_type, Tail_sign,location,icao,country_name,charges_per_hour,rating are required",
-      });
-    } else if (
-      typeof Hotel_type !== "string" ||
-      typeof Tail_sign !== "string" ||
-      typeof location !== "string" ||
-      typeof icao !== "string" ||
-      typeof country_name !== "string"
+    if (
+      !Hotel_type || !Tail_sign || !location || !icao ||
+      !country_name || typeof charges_per_hour !== "number" ||
+      typeof rating !== "number" || typeof sr_no !== "number"
     ) {
       return res.status(400).json({
-        error:
-          "Hotel_type, Tail_sign,location,icao,country_name must be a string",
+        success: false,
+        msg: "Hotel_type, Tail_sign, location, icao, country_name, charges_per_hour, rating, and sr_no are required, and the numeric fields must be numbers.",
       });
     }
-    else if (
-      typeof charges_per_hour !== "number" ||
-      typeof rating !== "number" ||
-      typeof sr_no !== "number"
 
-    ) {
-      return res.status(400).json({
-        error:
-          "charges_per_hour,rating and sr_no must be a number",
-      });
-    } else if (
-      Hotel_type === "" ||
-      Tail_sign === "" ||
-      location === "" ||
-      icao === "" ||
-      country_name === ""
-    ) {
-      return res.status(400).json({
-        success: false,
-        msg: `Hotel_type,Tail_sign,location,icao,country_name,charges_per_hour cant take an empty string value i.e ''`,
-      });
-    }
     const editedAircraftOperatorHotel = await AircraftOPerator.findByIdAndUpdate(
       id,
       { Hotel_type, Tail_sign, location, icao, country_name, charges_per_hour, rating, sr_no },
@@ -326,8 +317,19 @@ exports.EditAircraftOPeratorHotel = asyncHandler(async (req, res) => {
     }
 
     await Operator.updateMany(
-      { "aircraftOperators.aircraftOperator": editedAircraftOperatorHotel._id },
-      { $set: { "aircraftOperators.$[elem]": editedAircraftOperatorHotel } },
+      { "hotelOwner.aircraftOperator": editedAircraftOperatorHotel._id },
+      {
+        $set: {
+          "hotelOwner.$[elem].Hotel_type": Hotel_type,
+          "hotelOwner.$[elem].Tail_sign": Tail_sign,
+          "hotelOwner.$[elem].location": location,
+          "hotelOwner.$[elem].icao": icao,
+          "hotelOwner.$[elem].country_name": country_name,
+          "hotelOwner.$[elem].charges_per_hour": charges_per_hour,
+          "hotelOwner.$[elem].rating": rating,
+          "hotelOwner.$[elem].sr_no": sr_no
+        }
+      },
       { arrayFilters: [{ "elem.aircraftOperator": editedAircraftOperatorHotel._id }] }
     );
 
@@ -344,6 +346,7 @@ exports.EditAircraftOPeratorHotel = asyncHandler(async (req, res) => {
     });
   }
 });
+
 
 exports.DeleteAircraftOperatorHotel = asyncHandler(async (req, res) => {
   try {
@@ -366,8 +369,8 @@ exports.DeleteAircraftOperatorHotel = asyncHandler(async (req, res) => {
       }
 
       await Operator.updateMany(
-        { "aircraftOperators.aircraftOperator": deletedAircraftOperatorHotel.id },
-        { $pull: { aircraftOperators: { aircraftOperator: deletedAircraftOperatorHotel.id } } }
+        { "hotelOwner.aircraftOperator": deletedAircraftOperatorHotel._id },
+        { $pull: { hotelOwner: { aircraftOperator: deletedAircraftOperatorHotel.id } } }
       );
       return res.status(200).json({
         success: true,
@@ -381,6 +384,39 @@ exports.DeleteAircraftOperatorHotel = asyncHandler(async (req, res) => {
     return res.status(500).json({
       success: false,
       msg: "Internal server error",
+    });
+  }
+})
+
+
+exports.GetAllAvailableAircraftOperatorHotel = asyncHandler(async (req, res) => {
+  try {
+    if (!req.userOperator.id) {
+      return res.status(400).json({
+        success: false,
+        msg: "Please log in first. Unknown user.",
+      });
+    }
+    // Find all AircraftOPerator documents associated with my id
+    const AllAircraftOPerator = await AircraftOPerator.find();
+
+    if (AllAircraftOPerator.length < 1) {
+      return res.status(404).json({
+        success: false,
+        msg: "No Aircraft Operator Hotels Have been created yet",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: AllAircraftOPerator,
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      msg: "Server error",
+      error: error.message,
     });
   }
 })
